@@ -378,3 +378,40 @@ his instruction darkened the parents' facial features in the icon.
   edited master.
 - **APK:** `build/app/outputs/flutter-apk/app-release.apk`,
   55,383,686 bytes; copy saved as `build-manual/FairCare-couples.apk`.
+
+## 2026-10-21 (late) — Fix: release APK crash on account creation (shared_preferences JNI vs R8)
+
+- **Symptom (on device):** after installing the release APK, creating an
+  account showed "Couldn't load your data" —
+  `PlatformException: java.lang.NoSuchMethodError: no non-static method
+  "Lio/flutter/plugins/sharedpreferences/SharedPreferencesApiRegistrar;.getAll(Ljava/lang/String;Ljava/util/List;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;"`
+  on the first prefs read (lib/prefs_store.dart at startup / after auth).
+- **Root cause (proven from the shipped APK's dex, not speculation):**
+  shared_preferences_android 2.5.1's Dart side calls its Kotlin API via
+  JNI (package:jni), resolving methods by literal JVM signature strings
+  (lib/src/messages.g.jni.dart looks up
+  `getAll (Ljava/lang/String;Ljava/util/List;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;`).
+  Flutter's release build runs R8 by default (`--shrink`), and in the
+  shipped APK R8 had renamed `kotlin.coroutines.Continuation` to the
+  obfuscated class `Lig;` — the Registrar's method was actually
+  `getAll(Ljava/lang/String;Ljava/util/List;Lig;)Ljava/lang/Object;`
+  and no `Lkotlin/coroutines/Continuation;` class existed in the dex.
+  The JNI lookup therefore failed at runtime. Dependency versions were
+  NOT mismatched (shared_preferences 2.5.6 / shared_preferences_android
+  2.5.1 / platform_interface 2.4.2 / foundation 2.5.7 are the pairing
+  pub resolves, and their Dart↔native shapes agree); analyze/unit tests
+  cannot see this because it only exists in the shrunk release binary.
+- **Fix:** `android/app/build.gradle.kts` release buildType now sets
+  `isMinifyEnabled = false` and `isShrinkResources = false` (with an
+  explanatory comment). Sideloaded personal app — debug/release parity
+  beats APK size. No pubspec changes, no app-logic changes. Then
+  `flutter clean` + fresh `flutter pub get` (same resolved versions)
+  and a full release rebuild.
+- **Verification:** `flutter analyze` clean; `flutter test` 34/34.
+  Dexdump of the NEW APK shows
+  `io.flutter.plugins.sharedpreferences.SharedPreferencesApiRegistrar.getAll:(Ljava/lang/String;Ljava/util/List;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;`
+  defined, and the `Lkotlin/coroutines/Continuation;` class present.
+  aapt2 badging: package `com.faircare.faircare` v1.0.0, label `FairCare`.
+- **APK:** `build/app/outputs/flutter-apk/app-release.apk`,
+  61,914,596 bytes (larger than the shrunk build — expected without
+  R8); copied to `build-manual/FairCare-couples.apk` (MD5 matches).

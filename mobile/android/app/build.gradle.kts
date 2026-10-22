@@ -39,6 +39,15 @@ android {
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.getByName("debug")
+            // Minification MUST stay off for this app: shared_preferences_android
+            // resolves its Kotlin API from Dart via JNI using literal JVM
+            // signatures (e.g. SharedPreferencesApiRegistrar.getAll(String,
+            // List, kotlin.coroutines.Continuation)). Flutter's release build
+            // runs R8 by default, which renamed kotlin.coroutines.Continuation
+            // and broke that lookup (NoSuchMethodError on first prefs read,
+            // 2026-10-21). Sideloaded personal app: correctness over size.
+            isMinifyEnabled = false
+            isShrinkResources = false
         }
     }
 }
