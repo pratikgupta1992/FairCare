@@ -15,6 +15,7 @@ import 'dart:convert';
 import 'package:flutter/widgets.dart';
 
 import 'models.dart';
+import 'reminders.dart';
 import 'repository.dart';
 
 class AppController extends ChangeNotifier {
@@ -38,6 +39,11 @@ class AppController extends ChangeNotifier {
   /// Sign-out action in Firebase mode; null in local mode.
   final Future<void> Function()? onSignOut;
 
+  /// Invoked after reminder settings change, so the app entry
+  /// point can (re)build the platform notification schedule.
+  /// Null in tests (no platform plugins there).
+  void Function()? onRemindersChanged;
+
   StreamSubscription<void>? _repoSub;
 
   static const String _prefsKey = 'faircare_user_v1';
@@ -52,7 +58,13 @@ class AppController extends ChangeNotifier {
 
   int? _selectedBabyId;
 
+  ReminderSettings _reminderSettings = const ReminderSettings();
+
   String get userName => _userName;
+
+  /// Hourly logging-reminder settings (original app's
+  /// ReminderPrefs, kept per user/device like the default role).
+  ReminderSettings get reminderSettings => _reminderSettings;
 
   List<Baby> get joinedBabies {
     // Dedupe by id first (a repository cache glitch once surfaced
@@ -99,6 +111,13 @@ class AppController extends ChangeNotifier {
         ..addAll((j['defaultCaregiverByBaby'] as Map? ?? {}).map(
             (k, v) => MapEntry(int.parse(k as String), v as int)));
       _selectedBabyId = j['selectedBabyId'] as int?;
+      _reminderSettings = ReminderSettings(
+        enabled: (j['remindersEnabled'] as bool?) ?? false,
+        quietStartMin:
+            (j['quietStartMin'] as int?) ?? const ReminderSettings().quietStartMin,
+        quietEndMin:
+            (j['quietEndMin'] as int?) ?? const ReminderSettings().quietEndMin,
+      );
     }
     // First run on this device: every baby the backend already
     // shows this user counts as joined — locally that's the seeded
@@ -138,8 +157,27 @@ class AppController extends ChangeNotifier {
         'defaultCaregiverByBaby': _defaultCaregiverByBaby
             .map((k, v) => MapEntry(k.toString(), v)),
         'selectedBabyId': _selectedBabyId,
+        'remindersEnabled': _reminderSettings.enabled,
+        'quietStartMin': _reminderSettings.quietStartMin,
+        'quietEndMin': _reminderSettings.quietEndMin,
       }),
     );
+  }
+
+  Future<void> setRemindersEnabled(bool enabled,
+      {bool notifyService = true}) async {
+    _reminderSettings = _reminderSettings.copyWith(enabled: enabled);
+    await _savePrefs();
+    notifyListeners();
+    if (notifyService) onRemindersChanged?.call();
+  }
+
+  Future<void> setQuietHours(int startMin, int endMin) async {
+    _reminderSettings = _reminderSettings.copyWith(
+        quietStartMin: startMin, quietEndMin: endMin);
+    await _savePrefs();
+    notifyListeners();
+    onRemindersChanged?.call();
   }
 
   Future<void> setUserName(String name) async {
@@ -162,10 +200,10 @@ class AppController extends ChangeNotifier {
   /// Creates a baby (repository generates its connect code) and
   /// joins the current user to it. Concurrent calls share the
   /// in-flight create and all resolve to the same baby.
-  Future<Baby> createBaby(String name) async {
+  Future<Baby> createBaby(String name, {int? color}) async {
     final inFlight = _createInFlight;
     if (inFlight != null) return inFlight;
-    final future = _createBaby(name);
+    final future = _createBaby(name, color: color);
     _createInFlight = future;
     try {
       return await future;
@@ -174,8 +212,8 @@ class AppController extends ChangeNotifier {
     }
   }
 
-  Future<Baby> _createBaby(String name) async {
-    final baby = await repo.createBaby(name);
+  Future<Baby> _createBaby(String name, {int? color}) async {
+    final baby = await repo.createBaby(name, color: color);
     _joinedBabyIds.add(baby.id);
     _selectedBabyId = baby.id;
     await _savePrefs();

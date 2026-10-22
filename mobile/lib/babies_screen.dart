@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'app_controller.dart';
+import 'components.dart';
 import 'models.dart';
 import 'ui_helpers.dart';
 
@@ -70,29 +71,48 @@ class BabiesScreen extends StatelessWidget {
   Future<void> _showCreateDialog(BuildContext context) async {
     final controller = AppScope.of(context);
     final nameController = TextEditingController();
-    final name = await showDialog<String>(
+    // Default matches the original app's create dialog.
+    var color = kPalette[2];
+    final result = await showDialog<({String name, int color})>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('New baby'),
-        content: TextField(
-          controller: nameController,
-          autofocus: true,
-          decoration: const InputDecoration(labelText: "Baby's name"),
-          textCapitalization: TextCapitalization.words,
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancel')),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, nameController.text),
-            child: const Text('Create'),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setState) => AlertDialog(
+          title: const Text('New baby'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              TextField(
+                controller: nameController,
+                autofocus: true,
+                decoration: const InputDecoration(labelText: "Baby's name"),
+                textCapitalization: TextCapitalization.words,
+              ),
+              const SizedBox(height: 16),
+              ColorPickerRow(
+                selected: color,
+                onPick: (c) => setState(() => color = c),
+              ),
+            ],
           ),
-        ],
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancel')),
+            FilledButton(
+              onPressed: () => Navigator.pop(
+                  ctx, (name: nameController.text, color: color)),
+              child: const Text('Create'),
+            ),
+          ],
+        ),
       ),
     );
-    if (name == null || name.trim().isEmpty || !context.mounted) return;
-    final baby = await controller.createBaby(name.trim());
+    if (result == null || result.name.trim().isEmpty || !context.mounted) {
+      return;
+    }
+    final baby =
+        await controller.createBaby(result.name.trim(), color: result.color);
     if (!context.mounted) return;
     final code = controller.repo.connectCodeFor(baby.id);
     ScaffoldMessenger.of(context).showSnackBar(
@@ -213,8 +233,47 @@ class BabyDetailScreen extends StatelessWidget {
           Text(
               'Entries logged: ${controller.repo.entriesForBaby(baby.id).length}',
               style: Theme.of(context).textTheme.bodyLarge),
+          const SizedBox(height: 32),
+          OutlinedButton.icon(
+            icon: const Icon(Icons.delete_outline),
+            label: const Text('Delete baby'),
+            style: OutlinedButton.styleFrom(
+                foregroundColor: Theme.of(context).colorScheme.error),
+            onPressed: () => _confirmDelete(context),
+          ),
         ],
       ),
     );
+  }
+
+  /// Deletes this baby (and its entries) after an explicit
+  /// confirmation — a deliberate safety addition over the original
+  /// app, where delete had no confirm step: in the couples app the
+  /// delete is shared, removing the baby for the other parent too.
+  Future<void> _confirmDelete(BuildContext context) async {
+    final controller = AppScope.of(context);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Delete ${baby.name}?'),
+        content: const Text(
+            'This permanently deletes this baby and all its logged entries, for everyone sharing it. This cannot be undone.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          FilledButton(
+            style: FilledButton.styleFrom(
+                backgroundColor: Theme.of(context).colorScheme.error),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+    await controller.repo.deleteBaby(baby.id);
+    controller.refresh();
+    if (context.mounted) Navigator.of(context).pop();
   }
 }

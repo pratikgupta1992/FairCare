@@ -491,6 +491,20 @@ class FirestoreFairCareRepository implements FairCareRepository {
   }
 
   @override
+  Future<void> deleteCaregiver(int caregiverId) async {
+    _extraCaregivers.remove(caregiverId);
+    if (_babies.isNotEmpty) {
+      final batch = _db.batch();
+      for (final b in _babies) {
+        batch.delete(_sub(b.id, 'caregivers').doc('$caregiverId'));
+        _caregiversByBaby[b.id]?.remove(caregiverId);
+      }
+      await batch.commit();
+    }
+    _emit();
+  }
+
+  @override
   Future<CareTask> addTask(CareTask task) async {
     final t = task.copyWith(id: _newId(taskById.keys.toSet()));
     if (_babies.isEmpty) {
@@ -505,6 +519,36 @@ class FirestoreFairCareRepository implements FairCareRepository {
     }
     _emit();
     return t;
+  }
+
+  @override
+  Future<void> updateTask(CareTask task) async {
+    if (_babies.isEmpty) {
+      _extraTasks[task.id] = task;
+    } else {
+      final batch = _db.batch();
+      for (final b in _babies) {
+        batch.set(_sub(b.id, 'tasks').doc('${task.id}'), task.toJson());
+        (_tasksByBaby[b.id] ??= {})[task.id] = task;
+      }
+      _extraTasks.remove(task.id);
+      await batch.commit();
+    }
+    _emit();
+  }
+
+  @override
+  Future<void> deleteTask(int taskId) async {
+    _extraTasks.remove(taskId);
+    if (_babies.isNotEmpty) {
+      final batch = _db.batch();
+      for (final b in _babies) {
+        batch.delete(_sub(b.id, 'tasks').doc('$taskId'));
+        _tasksByBaby[b.id]?.remove(taskId);
+      }
+      await batch.commit();
+    }
+    _emit();
   }
 
   // ------------------------------------------------------------------

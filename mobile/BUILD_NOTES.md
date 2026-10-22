@@ -453,3 +453,199 @@ his instruction darkened the parents' facial features in the icon.
   recurring. Do NOT delete either row in the old build: both rows
   carry the same id, and `deleteBaby` would delete the real baby,
   its entries, and the `connectCodes/AW6FN7` lookup Akansha needs.
+
+## 2026-10-22 — UI restoration Phase 1: the original day timeline is back
+
+Pratik: the Flutter rewrite had kept the data/fairness/sync layers
+but replaced the original Kotlin app's Today view with a plain
+list — the Calendar views and the drag/resize timeline never got
+ported. Phase 1 restores the timeline (Calendar = Phase 2, parity
+pass = Phase 3, same day, below).
+
+- **What was built** (mirrors `TodayScreen.kt`'s DayTimeline):
+  - `lib/timeline_layout.dart` — pure layout/time math, unit
+    tested: greedy lane assignment for overlapping entries with
+    transitive cluster column counts (side-by-side columns),
+    15-minute snapping (`kSnapMinutes`), move/resize computations
+    clamped to the day, minimum duration = snap.
+  - `lib/day_timeline.dart` — scrollable 24h timeline: hour gutter,
+    time-positioned blocks, drag a block to MOVE it, drag its
+    bottom edge to RESIZE it (handle zone = bottom 25% clamped to
+    10–18 px, as in the original), live preview chip while
+    dragging, resize grip, red now-line + dot (0xFFE53935) on
+    today only, compact one-line block text
+    "Dad • 🍼 Bottle feed • 7:00–7:15 PM" (Pratik's Oct 9
+    readability format). Tap a block → the existing edit form; tap
+    an empty hour → the form prefilled at that hour + 60 min.
+  - `lib/today_screen.dart` — stateful rewrite around the
+    timeline; day navigation (Today/Yesterday/"Oct 21"), baby
+    picker and summary lines preserved; auto-scrolls near now
+    (today) or the first entry (other days); a static
+    `_sessionDayStart` keeps the viewed day across tab switches,
+    like the Kotlin ViewModel did.
+  - Drag/resize persist through the existing `updateEntry` path
+    (both repository implementations already had it — no repo
+    change needed).
+  - Constants from the original: hour height 64, snap 15 min,
+    minimum block height 30.
+- **Tests:** `test/timeline_layout_test.dart` (18 tests: lane
+  assignment for 2- and 3-way overlaps and non-overlapping
+  entries, snap/clamp, move and resize math, duration format).
+  Suite after Phase 1: 56/56.
+
+## 2026-10-22 — UI restoration Phase 2: Calendar tab
+
+- New 5th tab (Today / Babies / **Calendar** / Analytics /
+  Settings), port of `CalendarScreen.kt`:
+  - **Month:** prev/next navigation, summary card (ScoreRing 72,
+    verdict, "Xh Ym logged this month"), Sunday-start grid — day
+    number, the day's rounded fairness score (or '·'), tinted by
+    `scoreTint`, today bold/primary, selected day highlighted.
+    Tapping a day opens its detail card (ScoreRing 56, full day
+    label, per-caregiver minutes, "Open in Today view" — jumps
+    to that day in the Today tab via `TodayScreen.jumpToDay`).
+  - **Year:** 12 month tiles in 3 columns ("Jan" + "score · Xh"
+    or "no logs"), tinted by score; tapping a tile opens it in
+    Month view.
+  - **Lifetime:** score card (ScoreRing 88, "Xh Ym of care
+    across N days", "Logging since …", outsourced % line),
+    all-time parental SplitBar, hours-by-caregiver bars.
+  - Aggregation semantics match the original: month entries by
+    overlap, day entries by start-of-day membership, month tiles
+    by startMillis within the month.
+- New files: `lib/calendar_screen.dart`, `lib/calendar_logic.dart`
+  (month/year math, Sunday-start cells, score tints, labels),
+  `lib/components.dart` (ScoreRing — 270° arc from 135° with the
+  original color bands; SplitBar; TaskSplitRow; Heatmap;
+  ColorPickerRow; BabyPicker; `kPalette` from Common.kt).
+- **Tests:** `test/calendar_logic_test.dart` (11 tests) + a
+  Calendar-tab widget smoke test.
+
+## 2026-10-22 — UI restoration Phase 3: parity pass vs the Kotlin app
+
+Diffed the original app feature by feature and closed the gaps:
+
+- **Analytics rebuilt to the Kotlin layout:** range chips
+  Today / 7 days / 30 days (default 7; range end = tomorrow
+  00:00, overlap filter, as in `FairViewModel.analyticsEntries`),
+  ScoreRing score card with "Xh Ym of parental care logged" +
+  outsourced line, parental SplitBar, "Who does what" per-task
+  split rows (top 12, over the ported per-task weighted points),
+  the hourly Heatmap (dominant caregiver per cell by weighted
+  points; first 14 days of the ascending day list — the
+  original's quirk, kept), the "How the fairness score works"
+  card (original text), and CSV export.
+- **CSV export** (`lib/csv_export.dart`): byte-level port of
+  `CsvExport.buildCsv` — same header, rows sorted by start,
+  quoted/escaped fields, `caregiver_type` as the Kotlin enum
+  names, day/night minute split. Exported via share_plus from a
+  temp `faircare-log.csv` with chooser title "Share FairCare
+  log"; exports the currently selected analytics range, as the
+  original did.
+- **Tasks are editable** (Settings): tap any task → editor with
+  emoji + name, effort-weight slider 0.5–2.5 in 0.1 steps,
+  Anyone / Mom only chips, "Counts toward fairness score"
+  checkbox, delete; "Add task" creates a custom task with
+  sort = max+1. List subtitle shows "Anyone · 1.5×" plus
+  " · excluded from score" when applicable. Repository gained
+  `updateTask` / `deleteTask` / `deleteCaregiver` on BOTH
+  backends with identical semantics (Firestore: per-baby docs +
+  caches; the shared rules' members-only write already covers
+  them).
+- **Caregivers:** add dialog now has the color palette (default
+  kPalette[4], the original default) and type chips for all six
+  types; rows can be deleted; nanny/daycare rows show
+  " · paid help".
+- **Babies:** create dialog has the color palette (default
+  kPalette[2], matching the repository's default yellow);
+  `createBaby(name, {color})` threaded through controller → both
+  repositories. Baby detail gained **Delete baby** — WITH a
+  confirmation dialog (deliberate safety addition over the
+  original's no-confirm delete: in the couples app the delete is
+  shared and removes the baby for the other parent too).
+- **Hourly logging reminders** (`lib/reminders.dart` +
+  `lib/reminder_service.dart`): settings persist per user/device
+  in the controller prefs (enabled, quiet start/end; defaults
+  off, 10:00 PM – 7:00 AM — the original's `ReminderPrefs`).
+  Settings section with the switch, quiet-hours time pickers,
+  and the permission-denied note. Scheduling via
+  flutter_local_notifications: one daily-repeating inexact alarm
+  per allowed hour (quiet hours excluded), channel
+  "logging_reminders", copy identical to the original
+  ("Time to log care" / "Who's been with the baby this hour?
+  Tap to log it."). Android: desugaring enabled
+  (`desugar_jdk_libs` 2.1.4) + POST_NOTIFICATIONS (plugin
+  manifest) + RECEIVE_BOOT_COMPLETED and the plugin's receivers,
+  so the schedule re-arms after reboot; inexact mode, so no
+  exact-alarm permission is needed.
+- **Tests:** `test/csv_export_test.dart` (3),
+  `test/reminders_test.dart` (6), `test/repository_crud_test.dart`
+  (3). Full suite: **80/80** (38 baseline + 18 timeline + 24 new);
+  `flutter analyze` clean.
+- **APK:** release rebuilt with minify/shrink still disabled;
+  verification numbers in the entry footer below.
+
+### Parity table
+
+| Feature | Original (Kotlin) | Flutter before this pass | After this pass | Deferred + why |
+|---|---|---|---|---|
+| 24h day timeline | Scrollable 24h timeline, blocks positioned by start/duration, hour gutter, auto-scroll near now | Plain chronological list | Full timeline: positioned blocks, gutter, auto-scroll, compact one-line text "Dad • 🍼 Bottle feed • 7:00–7:15 PM" | — |
+| Drag move / resize | Drag block to move (15-min snap); drag bottom edge to resize; overlaps side-by-side in columns | Missing | Implemented with the original's constants (hour height 64, snap 15, min block 30, handle zone 25% clamped 10–18); persists via updateEntry | — |
+| Now line | Red line + dot on today | Missing | Implemented (0xFFE53935) | — |
+| Tap empty time | Tap an hour → log form prefilled at that hour (+60 min) | FAB only | Implemented | — |
+| Quick-log button | "Log care" FAB | Present | Present (unchanged) | — |
+| Calendar Month | Score-tinted day grid, month summary card, day detail + open-in-Today | Missing (no Calendar tab) | Implemented | — |
+| Calendar Year | 12 score-tinted month tiles, tap → month | Missing | Implemented | — |
+| Calendar Lifetime | All-time card, parental split, hours by caregiver | Missing | Implemented | — |
+| Analytics ranges | Today / 7 days / 30 days chips (default 7) | Single fixed summary | Chips with the original's range math | — |
+| Score card | ScoreRing + verdict + logged total + outsourced line | Text summary | Implemented (ScoreRing: 270° arc, original bands) | — |
+| Parental split bar | Stacked SplitBar with % legend | Text percentages | Implemented | — |
+| Who does what | Per-task split bars, top 12 | Missing | Implemented | — |
+| Hourly heatmap | Dominant caregiver per (day, hour) by weighted points | Missing | Implemented (incl. the first-14-days quirk) | — |
+| How score works | Explainer card | Missing | Implemented (original text) | — |
+| CSV export | Share sheet, `faircare-log.csv`, exact columns | Missing | Implemented (share_plus); exports the selected range | — |
+| Custom tasks | Add/edit/delete: emoji, name, weight 0.5–2.5, Anyone/Mom-only, counts toggle | Read-only list | Full editor in Settings; repo methods on both backends | — |
+| Caregivers | Add with palette + type, delete, paid-help marker | Fixed color, no delete | Palette + type chips + delete + " · paid help" | — |
+| Babies | Create with color; delete baby | Create without color; no delete | Palette on create; delete in detail | Delete now asks for confirmation — deliberate: couples delete is shared and destructive |
+| Hourly reminders | Inexact hourly alarm; quiet hours; skips already-logged hours; boot re-arm | Missing | Daily-repeating inexact alarms per allowed hour; quiet-hours pickers; permission flow; boot re-arm | Fire-time "skip if this hour already has a log" check: a notification plugin cannot run code at delivery time (the original's AlarmManager receiver could). Tapping a reminder opens the app but does not auto-open the log form |
+| Connect codes / default role | n/a (single-device app) | Present (couples additions) | Unchanged | — |
+
+
+### Verification footer (Phases 1–3, 2026-10-22)
+
+- **APK:** `build-manual/FairCare-couples.apk`, **65,418,897
+  bytes**, sha256
+  `ff8efc84b1b02526d296a8d19b3c196d697600acccc421cd8dcd59692e2986fe`
+  (byte-identical copy of `build/app/outputs/flutter-apk/app-release.apk`).
+- **Signer:** apksigner SHA-256
+  `7944243d1e75c5ba5b37e0e8189e844798bb80fb21966332c33d1345564c3b0b`
+  — the persistent key; this APK updates over the previous
+  install. **Label:** `FairCare` (aapt2), package
+  `com.faircare.faircare`.
+- **Content proof (new):** the packaged `libapp.so` was
+  string-checked for `logging_reminders`, "Who does what",
+  `faircare-log.csv`, and `Lifetime`, and the merged manifest
+  for both `ScheduledNotification*` receivers +
+  RECEIVE_BOOT_COMPLETED / POST_NOTIFICATIONS. Reason: this
+  session's first final build exited 0 and printed a plausible
+  size while Gradle left the PREVIOUS build's APK in the outputs
+  (stale packaging; intermediates were fresh, the APK was not).
+  It was caught only by the content check. A `flutter clean` +
+  rebuild produced the verified APK above. **Future builders:
+  never trust exit code + size — string-check the packaged
+  libapp.so for a new feature marker.**
+- **Egress CA rotated:** the same build first failed TLS
+  (`PKIX ... signature check failed`) fetching
+  flutter_local_notifications' AGP 8.11.1 artifacts: the JDK 17
+  truststore still held the pre-rotation Hatch egress CA
+  (SHA-256 CF:3B:F2:88…) while the proxy now presents
+  1C:4C:03:74…. Fixed by re-importing
+  `/run/hatch/egress-tls/hatch-egress-ca.pem` into the JDK
+  cacerts (delete + import alias `hatch-egress-ca`). If Gradle
+  downloads fail TLS again after a VM/proxy change, compare
+  `keytool -list -cacerts -alias hatch-egress-ca` against the
+  pem's fingerprint first. `flutter pub get` also flaked twice
+  through the proxy; `flutter pub get --offline` works — every
+  dependency is in the pub cache.
+- Not committed/pushed (parent agent handles pushes, per
+  instructions).

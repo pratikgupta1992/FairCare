@@ -14,10 +14,24 @@ import 'models.dart';
 import 'ui_helpers.dart';
 
 class LogEntryForm extends StatefulWidget {
-  const LogEntryForm({super.key, required this.baby, this.existing});
+  const LogEntryForm({
+    super.key,
+    required this.baby,
+    this.existing,
+    this.initialStartMillis,
+    this.initialDurationMin,
+  });
 
   final Baby baby;
   final LogEntry? existing;
+
+  /// For a new entry: prefill the start time (epoch millis) — e.g.
+  /// the hour tapped on the day timeline. Ignored when editing.
+  final int? initialStartMillis;
+
+  /// For a new entry: prefill the duration in minutes alongside
+  /// [initialStartMillis].
+  final int? initialDurationMin;
 
   @override
   State<LogEntryForm> createState() => _LogEntryFormState();
@@ -50,9 +64,16 @@ class _LogEntryFormState extends State<LogEntryForm> {
       // Pre-select the user's default role for this baby.
       _caregiver = controller.defaultCaregiverFor(widget.baby.id) ??
           repo.caregivers.firstOrNull;
-      final now = DateTime.now();
-      _start = DateTime(now.year, now.month, now.day, now.hour);
-      _end = _start.add(const Duration(hours: 1));
+      if (widget.initialStartMillis != null) {
+        _start = DateTime.fromMillisecondsSinceEpoch(
+            widget.initialStartMillis!);
+        _end = _start
+            .add(Duration(minutes: widget.initialDurationMin ?? 60));
+      } else {
+        final now = DateTime.now();
+        _start = DateTime(now.year, now.month, now.day, now.hour);
+        _end = _start.add(const Duration(hours: 1));
+      }
     }
   }
 

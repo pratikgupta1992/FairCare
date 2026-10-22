@@ -78,7 +78,10 @@ abstract class FairCareRepository {
 
   // --- Caregivers & tasks ---
   Future<Caregiver> addCaregiver(String name, CaregiverType type, int color);
+  Future<void> deleteCaregiver(int caregiverId);
   Future<CareTask> addTask(CareTask task);
+  Future<void> updateTask(CareTask task);
+  Future<void> deleteTask(int taskId);
 
   // --- Entries ---
   Future<LogEntry> addEntry(LogEntry entry);
@@ -296,11 +299,32 @@ class LocalFairCareRepository implements FairCareRepository {
   }
 
   @override
+  Future<void> deleteCaregiver(int caregiverId) async {
+    _caregivers.removeWhere((c) => c.id == caregiverId);
+    await _save();
+  }
+
+  @override
   Future<CareTask> addTask(CareTask task) async {
     final t = task.copyWith(id: _nextTaskId++);
     _tasks.add(t);
     await _save();
     return t;
+  }
+
+  @override
+  Future<void> updateTask(CareTask task) async {
+    final i = _tasks.indexWhere((t) => t.id == task.id);
+    if (i >= 0) {
+      _tasks[i] = task;
+      await _save();
+    }
+  }
+
+  @override
+  Future<void> deleteTask(int taskId) async {
+    _tasks.removeWhere((t) => t.id == taskId);
+    await _save();
   }
 
   @override

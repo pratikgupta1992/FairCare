@@ -22,10 +22,12 @@ import 'app_controller.dart';
 import 'auth_screen.dart';
 import 'auth_service.dart';
 import 'babies_screen.dart';
+import 'calendar_screen.dart';
 import 'firebase_options.dart';
 import 'firebase_repository.dart';
 import 'onboarding_screen.dart';
 import 'prefs_store.dart';
+import 'reminder_service.dart';
 import 'repository.dart';
 import 'settings_screen.dart';
 import 'today_screen.dart';
@@ -226,22 +228,54 @@ class HomeShell extends StatefulWidget {
 
 class _HomeShellState extends State<HomeShell> {
   int _index = 0;
+  bool _remindersWired = false;
 
-  static const _titles = ['Today', 'Babies', 'Analytics', 'Settings'];
-  static const _screens = [
-    TodayScreen(),
-    BabiesScreen(),
-    AnalyticsScreen(),
-    SettingsScreen(),
+  static const _titles = [
+    'Today',
+    'Babies',
+    'Calendar',
+    'Analytics',
+    'Settings',
   ];
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_remindersWired) return;
+    _remindersWired = true;
+    // Keep the platform notification schedule in sync with the
+    // user's reminder settings (Settings tab edits them via the
+    // controller). Apply once at startup when already enabled —
+    // e.g. after a reboot cleared the alarms.
+    final controller = AppScope.of(context);
+    controller.onRemindersChanged =
+        () => ReminderService.applySettings(controller.reminderSettings);
+    if (controller.reminderSettings.enabled) {
+      ReminderService.applySettings(controller.reminderSettings);
+    }
+  }
+
+  /// Calendar's "Open in Today view": point Today at the tapped
+  /// day and switch to that tab.
+  void _openDayInToday(int dayStartMillis) {
+    TodayScreen.jumpToDay(dayStartMillis);
+    setState(() => _index = 0);
+  }
 
   @override
   Widget build(BuildContext context) {
     // Rebuild when app state changes (new entries, joins, defaults).
     AppScope.of(context);
+    final screens = [
+      const TodayScreen(),
+      const BabiesScreen(),
+      CalendarScreen(onJumpToDay: _openDayInToday),
+      const AnalyticsScreen(),
+      const SettingsScreen(),
+    ];
     return Scaffold(
       appBar: AppBar(title: Text('FairCare · ${_titles[_index]}')),
-      body: _screens[_index],
+      body: screens[_index],
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,
         onDestinationSelected: (i) => setState(() => _index = i),
@@ -250,6 +284,8 @@ class _HomeShellState extends State<HomeShell> {
               icon: Icon(Icons.today), label: 'Today'),
           NavigationDestination(
               icon: Icon(Icons.child_care), label: 'Babies'),
+          NavigationDestination(
+              icon: Icon(Icons.calendar_month), label: 'Calendar'),
           NavigationDestination(
               icon: Icon(Icons.balance), label: 'Analytics'),
           NavigationDestination(

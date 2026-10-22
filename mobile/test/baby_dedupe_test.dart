@@ -81,7 +81,16 @@ class FakeRepository implements FairCareRepository {
       throw UnimplementedError();
 
   @override
+  Future<void> deleteCaregiver(int caregiverId) async {}
+
+  @override
   Future<CareTask> addTask(CareTask task) => throw UnimplementedError();
+
+  @override
+  Future<void> updateTask(CareTask task) async {}
+
+  @override
+  Future<void> deleteTask(int taskId) async {}
 
   @override
   Future<LogEntry> addEntry(LogEntry entry) => throw UnimplementedError();
