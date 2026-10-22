@@ -337,3 +337,44 @@ scale.)
   published, Email/Password provider enabled. Config drop-in is
   done regardless; the app falls back to the local backend if
   Firebase init fails.
+
+## 2026-10-21 (late) — App identity: "FairCare" name + family icon, parents' features darkened
+
+Pratik installed the couples build and found it showed as lowercase
+"faircare" with the default Flutter logo. Fixed name + icon, and per
+his instruction darkened the parents' facial features in the icon.
+
+- **Source artwork:** the original AI-generated master at
+  `icon-work/media-generation-faircare-family-icon-soft-0-ec618659-234c-448b-91ca-851934ada5a4.webp`
+  (1600×1600, the "soft" color version). Verified it is the exact
+  source of the old native app's launcher foreground (downscale diff
+  0.0 vs `app/src/main/res/drawable-xxxhdpi/ic_launcher_foreground.png`,
+  432×432). Original left untouched.
+- **Eye/feature edit:** the parents' closed-eye curves and smiles were
+  rendered in pale cream (254,242,216) on peach skin (250,206,182) —
+  sampled and confirmed. On a copy of the master, pixels matching that
+  cream inside the two parent-face ellipses (baby region excluded)
+  were blended to warm dark brown (107,66,50) #6B4232, weighted by
+  distance-to-feature-color so anti-aliased edges blend naturally;
+  a second targeted pass (rect x 612–672, y 830–892) caught the tip
+  of Mom's right-eye stroke that the baby-exclusion zone had clipped.
+  ~16,975 px changed; verified 0 changes to the baby's face (dark
+  teal eyes (1,79,101), cream skin, rose blush all byte-identical),
+  the teal background, hearts, or skin tones.
+- **Files changed:**
+  - `android/app/src/main/AndroidManifest.xml` — label "faircare" → "FairCare".
+  - `android/app/src/main/res/mipmap-{mdpi,hdpi,xhdpi,xxhdpi,xxxhdpi}/ic_launcher.png`
+    — regenerated from the edited artwork (48/72/96/144/192 px).
+  - `assets/icon/icon.png` — edited master copy, 1024×1024 (new).
+  - `ios/Runner/Assets.xcassets/AppIcon.appiconset/*.png` — full set
+    regenerated from the edited artwork; Contents.json filenames unchanged.
+  - `ios/Runner/Info.plist` — CFBundleDisplayName "Faircare" → "FairCare",
+    CFBundleName "faircare" → "FairCare".
+- **Verification:** `flutter analyze` — no issues. `flutter test` —
+  **34/34 passed**. Release rebuild succeeded (~5.8 min).
+  `aapt2 dump badging`: `application-label:'FairCare'` (all locales),
+  package `com.faircare.faircare` v1.0.0. The APK's embedded icon
+  resource is pixel-identical (mean abs diff 0.0 at 48×48) to the
+  edited master.
+- **APK:** `build/app/outputs/flutter-apk/app-release.apk`,
+  55,383,686 bytes; copy saved as `build-manual/FairCare-couples.apk`.

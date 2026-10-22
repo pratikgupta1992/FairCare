@@ -25,24 +25,28 @@ Developer Program membership is needed for personal use.
    in the repo — real config, added 2026-10-21).
    ⚠️ IMPORTANT: the file existing on disk is NOT enough — the Xcode
    project does not reference it yet. After opening the workspace
-   (step 4), drag `GoogleService-Info.plist` from the `ios/Runner`
+   (step 5), drag `GoogleService-Info.plist` from the `ios/Runner`
    folder into the **Runner** group in Xcode's left sidebar, and in
    the dialog make sure the **Runner target** is ticked. Without this
    step the app builds but Firebase fails to start on the phone.
-4. Open `ios/Runner.xcworkspace` in Xcode (**xcworkspace**, not the
+4. App icon: the repo cannot carry the PNG icon files, so Muse will
+   send the master `icon.png` (the family logo, parents' eyes darkened)
+   separately. In Xcode, open `Assets.xcassets` → `AppIcon` and drag
+   the 1024×1024 `icon.png` into the icon well — one size is enough.
+5. Open `ios/Runner.xcworkspace` in Xcode (**xcworkspace**, not the
    xcodeproj).
-5. Select the **Runner** target → Signing & Capabilities:
+6. Select the **Runner** target → Signing & Capabilities:
    - Tick "Automatically manage signing".
    - Team: choose your **Personal Team** (your Apple ID).
    - If Xcode complains the bundle ID is taken, change it to
      something personal, e.g. `com.faircare.faircare.akansha` —
      tell Muse, the Firebase iOS app must be re-registered with
      the same ID.
-6. Pick your iPhone as the run destination (top toolbar), press
+7. Pick your iPhone as the run destination (top toolbar), press
    **Run ▶**.
-7. First launch only: on the iPhone go to Settings → General →
+8. First launch only: on the iPhone go to Settings → General →
    VPN & Device Management → trust your Apple ID developer profile.
-8. In the app: create your account (email + password), then either
+9. In the app: create your account (email + password), then either
    join with the baby's connect code (Babies → Join) or create the
    baby and share its code. Set your default role in Settings so
    logging pre-selects you.
