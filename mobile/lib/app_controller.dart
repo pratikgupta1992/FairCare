@@ -54,8 +54,26 @@ class AppController extends ChangeNotifier {
 
   String get userName => _userName;
 
-  List<Baby> get joinedBabies =>
-      repo.babies.where((b) => _joinedBabyIds.contains(b.id)).toList();
+  List<Baby> get joinedBabies {
+    // Dedupe by id first (a repository cache glitch once surfaced
+    // the same baby twice in the Babies list), then defensively by
+    // connect code: a code is the join credential and the backend's
+    // lookup can only point at one baby, so if two records ever
+    // share a code the later one is a phantom — keep the first,
+    // which is the one loaded from the backend / pointed to.
+    final byId = <int, Baby>{};
+    for (final b in repo.babies) {
+      if (_joinedBabyIds.contains(b.id)) byId.putIfAbsent(b.id, () => b);
+    }
+    final seenCodes = <String>{};
+    final out = <Baby>[];
+    for (final b in byId.values) {
+      final code = repo.connectCodeFor(b.id);
+      if (code != null && !seenCodes.add(code)) continue;
+      out.add(b);
+    }
+    return out;
+  }
 
   Baby? get selectedBaby {
     final babies = joinedBabies;
@@ -136,9 +154,27 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// In-flight create, used to coalesce concurrent calls (e.g. a
+  /// double-tap on a create button that has no busy state of its
+  /// own) into a single baby instead of two.
+  Future<Baby>? _createInFlight;
+
   /// Creates a baby (repository generates its connect code) and
-  /// joins the current user to it.
+  /// joins the current user to it. Concurrent calls share the
+  /// in-flight create and all resolve to the same baby.
   Future<Baby> createBaby(String name) async {
+    final inFlight = _createInFlight;
+    if (inFlight != null) return inFlight;
+    final future = _createBaby(name);
+    _createInFlight = future;
+    try {
+      return await future;
+    } finally {
+      if (identical(_createInFlight, future)) _createInFlight = null;
+    }
+  }
+
+  Future<Baby> _createBaby(String name) async {
     final baby = await repo.createBaby(name);
     _joinedBabyIds.add(baby.id);
     _selectedBabyId = baby.id;

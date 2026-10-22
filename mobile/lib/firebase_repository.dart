@@ -117,6 +117,18 @@ class FirestoreFairCareRepository implements FairCareRepository {
     _emit();
   }
 
+  /// Inserts [baby] into the cache, or replaces the cached copy
+  /// with the same id. Every cache write goes through here so a
+  /// baby id can never occupy two slots at once.
+  void _upsertBaby(Baby baby) {
+    final i = _babies.indexWhere((b) => b.id == baby.id);
+    if (i >= 0) {
+      _babies[i] = baby;
+    } else {
+      _babies.add(baby);
+    }
+  }
+
   void _applyBabies(List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
     final seen = <int>{};
     for (final doc in docs) {
@@ -127,15 +139,17 @@ class FirestoreFairCareRepository implements FairCareRepository {
         color: (d['color'] as num).toInt(),
       );
       seen.add(baby.id);
-      final i = _babies.indexWhere((b) => b.id == baby.id);
-      if (i >= 0) {
-        _babies[i] = baby;
-      } else {
-        _babies.add(baby);
-      }
+      _upsertBaby(baby);
       final code = d['connectCode'] as String?;
       if (code != null) _codes[baby.id] = code;
     }
+    // Self-heal: if a duplicate id ever slipped into the cache
+    // (createBaby's mirror step used to add unconditionally while
+    // the snapshot listener applied the same document — the baby
+    // then rendered twice for the rest of the session), drop the
+    // later copies here.
+    final cachedIds = <int>{};
+    _babies.removeWhere((b) => !cachedIds.add(b.id));
     // Babies that disappeared (deleted / membership removed).
     for (final b in _babies.where((b) => !seen.contains(b.id)).toList()) {
       _babies.removeWhere((x) => x.id == b.id);
@@ -219,7 +233,12 @@ class FirestoreFairCareRepository implements FairCareRepository {
   // ------------------------------------------------------------------
 
   @override
-  List<Baby> get babies => List.unmodifiable(_babies);
+  List<Baby> get babies {
+    // Final safety net: never hand out the same baby id twice,
+    // even if a duplicate somehow reaches the cache.
+    final seen = <int>{};
+    return List.unmodifiable(_babies.where((b) => seen.add(b.id)));
+  }
 
   @override
   List<Caregiver> get caregivers {
@@ -346,9 +365,13 @@ class FirestoreFairCareRepository implements FairCareRepository {
     }
     await batch.commit();
 
-    // Mirror into the caches so getters are correct immediately;
-    // the listeners will echo the same state.
-    _babies.add(baby);
+    // Mirror into the caches so getters are correct immediately.
+    // Upsert, never blindly add: the snapshot listener may already
+    // have applied this same document (Firestore delivers
+    // latency-compensated local snapshots for our own writes,
+    // usually before this mirror step runs), and an unconditional
+    // add surfaced the baby twice in the list for the session.
+    _upsertBaby(baby);
     _codes[id] = code;
     _caregiversByBaby[id] = {for (final cg in seedCaregivers) cg.id: cg};
     _tasksByBaby[id] = {

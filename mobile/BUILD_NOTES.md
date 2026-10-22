@@ -415,3 +415,41 @@ his instruction darkened the parents' facial features in the icon.
 - **APK:** `build/app/outputs/flutter-apk/app-release.apk`,
   61,914,596 bytes (larger than the shrunk build — expected without
   R8); copied to `build-manual/FairCare-couples.apk` (MD5 matches).
+
+## 2026-10-21 (late evening) — Duplicate baby in the Babies list: fixed
+
+- **Symptom:** after creating "Nyra" in onboarding, the Babies tab
+  listed her twice, both rows showing the same connect code.
+- **Mechanism (one document, not two):** `createBaby` in
+  `firebase_repository.dart` mirrored the new baby into the cache
+  with an unconditional `_babies.add(...)`, while the snapshot
+  listener attached in `init()` applied the same document from
+  Firestore's latency-compensated local snapshot. The id landed in
+  the cache twice; `_applyBabies` only replaced the first match, so
+  the duplicate never healed within the session. Two real documents
+  were ruled out: ids are epoch-millis and connect codes are
+  random + verified unique against the `connectCodes` collection,
+  so a second creation would have shown a different code.
+- **Fix (defense in depth):**
+  - `firebase_repository.dart`: new `_upsertBaby` used by
+    `createBaby` and `_applyBabies`; `_applyBabies` also drops any
+    later same-id copies (self-heal); `babies` getter dedupes by id.
+  - `app_controller.dart`: `joinedBabies` dedupes by id, then
+    defensively by connect code (first kept — the backend lookup
+    points at one baby per code); `createBaby` coalesces concurrent
+    calls into one in-flight create (the Babies-tab create dialog
+    had no double-tap guard).
+- **Tests:** new `test/baby_dedupe_test.dart` (4 tests: same-id
+  dup renders once, shared-code dup renders once keeping first,
+  concurrent creates create one baby, sequential creates still
+  create separate babies). `flutter analyze` clean;
+  `flutter test` 38/38 (34 baseline + 4 new).
+- **APK:** release rebuilt (minify/shrink remain disabled),
+  61,914,596 bytes, copied to `build-manual/FairCare-couples.apk`.
+- **Existing duplicate on Pratik's phone:** no cleanup needed and
+  nothing to delete — there is only one Nyra document; the second
+  row was an in-memory artifact of the creation session. A cold
+  app restart already shows one; the fixed build prevents it
+  recurring. Do NOT delete either row in the old build: both rows
+  carry the same id, and `deleteBaby` would delete the real baby,
+  its entries, and the `connectCodes/AW6FN7` lookup Akansha needs.
