@@ -1,13 +1,17 @@
 /// Backend abstraction for FairCare.
 ///
 /// The couples app talks to data only through [FairCareRepository].
-/// Today the working implementation is [LocalFairCareRepository]
-/// (on-device, JSON-persisted). The Firebase implementation
-/// (see `firebase_repository_stub.dart`) will implement this same
-/// interface once a Firebase project exists, so no screen code
-/// changes when the backend swaps.
+/// Two implementations exist: [LocalFairCareRepository] (on-device,
+/// JSON-persisted — used with `--dart-define=USE_LOCAL_BACKEND=true`
+/// and in tests) and `FirestoreFairCareRepository` in
+/// `firebase_repository.dart` (Firebase Auth + Cloud Firestore).
+/// Both expose the same synchronous, cache-backed getters; the
+/// Firestore implementation keeps its caches current with snapshot
+/// listeners and announces updates on [FairCareRepository.changes],
+/// so no screen code changes when the backend swaps.
 library;
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 
@@ -32,6 +36,12 @@ class MemoryKeyValueStore implements KeyValueStore {
 abstract class FairCareRepository {
   Future<void> init();
 
+  /// Emits whenever the cached data may have changed (a local
+  /// mutation was saved, or a Firestore snapshot arrived). The app
+  /// controller listens and rebuilds the UI. This is how realtime
+  /// updates from the other parent's phone reach the screens.
+  Stream<void> get changes;
+
   List<Baby> get babies;
   List<Caregiver> get caregivers;
   List<CareTask> get tasks;
@@ -55,8 +65,16 @@ abstract class FairCareRepository {
   /// old one. Returns the new code.
   Future<String> regenerateConnectCode(int babyId);
 
-  /// Looks up a baby by its connect code (case-insensitive).
-  Baby? babyForCode(String code);
+  /// Resolves a connect code (case-insensitive) AND joins the
+  /// current user to that baby: locally that just means resolving
+  /// it; on Firestore it adds the user's uid to the baby's
+  /// `memberUids`. Returns the baby, or null when the code doesn't
+  /// match any baby.
+  ///
+  /// This replaces the scaffold's synchronous `babyForCode` lookup:
+  /// joining is inherently a network operation on Firestore, so it
+  /// is a Future in the interface.
+  Future<Baby?> joinWithCode(String code);
 
   // --- Caregivers & tasks ---
   Future<Caregiver> addCaregiver(String name, CaregiverType type, int color);
@@ -82,13 +100,17 @@ String generateConnectCode(Random rng, Set<String> taken) {
   return code;
 }
 
+/// Canonical form of a connect code as typed by a user: codes are
+/// stored uppercase, so lookups trim and uppercase first.
+String normalizeConnectCode(String code) => code.trim().toUpperCase();
+
 /// Working local backend: everything lives on this device, persisted
 /// as a single JSON blob in the [KeyValueStore].
 ///
 /// NOTE on connect codes: in the Firebase version, codes are
-/// generated and resolved server-side (Firestore). Here they are
-/// generated locally, which is enough to build and test the full
-/// create/join UX on one device.
+/// resolved via the top-level `connectCodes` collection. Here they
+/// are generated and resolved locally, which is enough to build and
+/// test the full create/join UX on one device.
 class LocalFairCareRepository implements FairCareRepository {
   LocalFairCareRepository(this._store, {Random? random})
       : _rng = random ?? Random.secure();
@@ -101,6 +123,10 @@ class LocalFairCareRepository implements FairCareRepository {
 
   final KeyValueStore _store;
   final Random _rng;
+  final StreamController<void> _changes = StreamController.broadcast();
+
+  @override
+  Stream<void> get changes => _changes.stream;
 
   final List<Baby> _babies = [];
   final List<Caregiver> _caregivers = [];
@@ -184,6 +210,7 @@ class LocalFairCareRepository implements FairCareRepository {
       'nextEntryId': _nextEntryId,
     };
     await _store.write(_storageKey, jsonEncode(j));
+    if (!_changes.isClosed) _changes.add(null);
   }
 
   @override
@@ -248,8 +275,8 @@ class LocalFairCareRepository implements FairCareRepository {
   }
 
   @override
-  Baby? babyForCode(String code) {
-    final norm = code.trim().toUpperCase();
+  Future<Baby?> joinWithCode(String code) async {
+    final norm = normalizeConnectCode(code);
     for (final entry in _codes.entries) {
       if (entry.value == norm) {
         return _babies.where((b) => b.id == entry.key).firstOrNull;

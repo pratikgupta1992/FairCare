@@ -90,11 +90,27 @@ class SettingsScreen extends StatelessWidget {
           onPressed: () => _showAddCaregiverDialog(context),
         ),
         const SizedBox(height: 32),
-        const Card(
+        Card(
           child: Padding(
-            padding: EdgeInsets.all(12),
-            child: Text(
-                'Backend: local (on-device) for now. Firebase sync is stubbed behind the same repository interface — see BUILD_NOTES.md.'),
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Backend: ${controller.backendLabel}'),
+                if (controller.accountLabel != null) ...[
+                  const SizedBox(height: 4),
+                  Text('Signed in as ${controller.accountLabel}'),
+                ],
+                if (controller.onSignOut != null) ...[
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.logout),
+                    label: const Text('Sign out'),
+                    onPressed: () => controller.onSignOut!(),
+                  ),
+                ],
+              ],
+            ),
           ),
         ),
       ],

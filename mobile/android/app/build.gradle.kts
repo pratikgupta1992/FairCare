@@ -1,5 +1,10 @@
 plugins {
     id("com.android.application")
+    // FlutterFire: reads android/app/google-services.json (dropped
+    // in by `flutterfire configure` — intentionally NOT in the
+    // repo yet; an Android build will fail until that file exists,
+    // while analyze/test are unaffected).
+    id("com.google.gms.google-services")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }

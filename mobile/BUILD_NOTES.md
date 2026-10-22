@@ -3,6 +3,127 @@
 Built 2026-10-21 (scaffold phase). The Android Kotlin app at the repo
 root was used read-only as the reference and was not modified.
 
+---
+
+## 2026-10-21 (later) — Firebase wiring
+
+### What changed
+
+- **Dependencies** (via `flutter pub add`): `firebase_core ^5.0.0`,
+  `firebase_auth ^7.0.0`, `cloud_firestore ^7.0.0`.
+- **`lib/firebase_repository.dart`** — NEW, real implementation;
+  `lib/firebase_repository_stub.dart` is **deleted**. 
+  `FirestoreFairCareRepository` implements the same
+  `FairCareRepository` interface against this schema:
+  `babies/{id}` {name, color, connectCode, memberUids, createdBy,
+  createdAt, updatedAt}; `babies/{id}/caregivers|tasks|entries`
+  subcollections (model codecs from `models.dart`; entries also
+  carry createdBy = uid and server timestamps); top-level
+  `connectCodes/{CODE}` → {babyId} for join-by-code (joining
+  arrayUnion's the caller's uid into memberUids).
+  Design notes:
+  - The interface stayed synchronous/cache-backed: `init()` does a
+    one-shot load, then Firestore snapshot listeners keep the
+    caches live and emit on the new `changes` stream — that stream
+    is the realtime path (partner's entry → snapshot → cache →
+    controller rebuild). One-shot reads are used only for the
+    initial load and inside `joinWithCode` (lookup + post-join
+    load); everything else is listener-fed.
+  - Int model ids double as Firestore doc ids (as strings); new
+    ids are epoch-millis. Each baby seeds caregivers Mom=1/Dad=2
+    and tasks 1–12, exactly like the local backend.
+  - Interface adaptations (the only ones): `babyForCode` (sync)
+    → `Future<Baby?> joinWithCode` (joining is a network op), and
+    the added `changes` stream. Local repository, controller and
+    tests adapted accordingly.
+  - `addCaregiver`/`addTask` have no baby parameter in the
+    interface, so Firestore writes them into every joined baby
+    (same id) — documented in the file header.
+  - `createBaby` writes the baby doc FIRST, then batches the rest:
+    the security rules check membership via `get()`, which sees
+    pre-batch state.
+- **`lib/firebase_options.dart`** — config drop point with clearly
+  marked `REPLACE_ME` placeholder values. No real config exists
+  yet; analyze/tests pass with placeholders.
+- **`lib/auth_service.dart`** — `AuthService` abstraction +
+  `FirebaseAuthService` (email/password sign-in, sign-up, sign-out,
+  authState stream) + parent-friendly error messages.
+  **`lib/auth_screen.dart`** — sign-in/sign-up screen.
+- **`lib/main.dart`** — backend switch
+  `--dart-define=USE_LOCAL_BACKEND=true` runs the local mock with
+  NO Firebase config (tests + pre-config demos). Default mode
+  initialises Firebase and runs `FirebaseFairCareRoot`: auth gate
+  (signed-out → AuthScreen; signed-in → per-uid Firestore repo +
+  controller, loading spinner meanwhile). If Firebase init throws
+  (placeholders / missing google-services.json on a fresh
+  checkout), the app falls back to the local backend instead of
+  crashing. Settings now shows the real backend label, the
+  signed-in account, and a sign-out button in Firebase mode.
+- **`lib/onboarding_screen.dart`** — first-run flow, one screen:
+  (1) your name, (2) "Create our baby" (shows the connect code big
+  with copy + "share this with your partner") OR "Join with a
+  code", (3) default-role chips (Mom/Dad/Parent), then "Start
+  logging care". `FairCareApp` routes users with no baby to it;
+  users with a baby skip straight to Today.
+- **`firestore.rules`** (project root) — authenticated-only;
+  babies + subcollections readable/writable only by memberUids;
+  connectCodes: `get` by any signed-in user (the code is the
+  secret), no listing, create/delete only by members of the baby
+  it points to; the baby-doc update rule additionally allows the
+  join write (a non-member appending ONLY their own uid to
+  memberUids). Header says it plainly: **deploy manually** —
+  Firebase Console → Firestore → Rules → paste → Publish (or
+  `firebase deploy --only firestore:rules`). Do this BEFORE real
+  use; until published, console default rules apply.
+- **Android**: google-services Gradle plugin wired
+  (`com.google.gms.google-services` 4.4.3 in
+  `android/settings.gradle.kts` `apply false`, applied in
+  `android/app/build.gradle.kts`). `google-services.json` is
+  intentionally absent — an Android *device build* will fail
+  until it lands; analyze/tests are unaffected.
+- **iOS**: `GoogleService-Info.plist` goes in `ios/Runner/` (add
+  it to the Runner target in Xcode). Not fabricated; absent for
+  now.
+
+### Results
+
+- `flutter analyze` → **No issues found!**
+- `flutter test` → **All tests passed! — 34 tests**: the existing
+  31 (fairness 20, repository/controller 9 — join tests updated
+  for the async `joinWithCode` — widget 2) plus 3 new in
+  `test/firebase_mode_test.dart`: connect-code normalization,
+  auth gate shows sign-in when signed out (fake AuthService —
+  Firebase untouched), and the full onboarding flow in local mode
+  (create baby → code shown → pick Dad → lands on Today).
+  The Firestore join path itself is NOT unit-tested — it needs a
+  real project; don't fake it.
+
+### Remaining steps, in order
+
+1. **Drop the real config.** With the Firebase CLI signed in to
+   Pratik's Google account: `cd mobile && flutterfire configure`
+   (creates `lib/firebase_options.dart` for real, drops
+   `android/app/google-services.json` and
+   `ios/Runner/GoogleService-Info.plist`). In Firebase Console,
+   first enable **Authentication → Email/Password** and create the
+   **Firestore** database.
+2. **Publish the rules**: paste `mobile/firestore.rules` into
+   Firebase Console → Firestore Database → Rules → Publish.
+3. **Android build** (this VM or any machine): install JDK +
+   Android SDK, `flutter doctor --android-licenses`, then
+   `cd mobile && flutter build apk --release` (cap Gradle heap
+   `-Xmx384m` in `android/gradle.properties` if it OOMs on this
+   VM). Sideload the APK.
+4. **Akansha's Mac**: clone repo → `flutter pub get` → open
+   `ios/Runner.xcworkspace`, add `GoogleService-Info.plist` to
+   the Runner target, set her personal team under Signing &
+   Capabilities → connect iPhone → `flutter run --release`.
+   Free-signing rules still apply (7-day expiry, re-run to
+   refresh).
+5. First real run-through: Pratik creates the account + baby,
+   shares the code; Akansha signs up, joins with the code, both
+   log an entry and watch it appear on the other phone.
+
 ## Environment
 
 - Flutter **3.47.7** (stable, Dart 3.13.5) installed at
@@ -123,12 +244,12 @@ repository/controller 9, widget 2.
 
 ## What is stubbed / not yet ported
 
-- **Firebase**: stub only (see header of
-  `lib/firebase_repository_stub.dart` for the schema). Until it
-  lands, data lives **only on the device running the app** — the
-  two phones do not actually sync yet, and connect codes resolve
-  locally on the device that created the baby. This is the mock
-  the spec allows for this phase.
+- **Firebase**: ~~stub only~~ — SUPERSEDED by the "Firebase
+  wiring" section at the top of this file: the real Firestore
+  repository, auth gate, and onboarding are implemented. Sync is
+  live once the real config is dropped in and the rules are
+  published (steps 1–2 there). Until then the app still defaults
+  to device-local data in local mode / fallback.
 - Not ported from the Android app (yet): hourly logging reminders /
   notifications, CSV export, the Calendar tab and hourly heatmap
   *screen* (the `hourlyDominant` logic itself is ported and
@@ -137,24 +258,13 @@ repository/controller 9, widget 2.
 
 ## Next steps — Firebase wiring (needs Pratik)
 
-1. Pratik creates a Firebase project at
-   console.firebase.google.com under his Google account (Spark /
-   free tier), enables **Authentication** (email link or Google)
-   and **Cloud Firestore**.
-2. From a machine with the Firebase CLI: `flutterfire configure`
-   in `mobile/` (or manually place the downloaded
-   `google-services.json` in `mobile/android/app/` and
-   `GoogleService-Info.plist` in `mobile/ios/Runner/`).
-3. Add `firebase_core`, `cloud_firestore`, `firebase_auth` to
-   `pubspec.yaml`, call `Firebase.initializeApp()` in `main()`.
-4. Implement `FirebaseFairCareRepository` per the schema in the
-   stub file and swap it for `LocalFairCareRepository` in
-   `lib/main.dart` — no screen changes needed.
-5. Write Firestore rules: a baby's subcollections are readable /
-   writable only by uids in `babies/{id}.memberUids`; the
-   top-level `connectCodes/{code}` doc is the only join path.
-6. Move connect-code generation server-side (transaction or a
-   small Cloud Function) so codes can't collide across users.
+SUPERSEDED — see "Remaining steps, in order" in the Firebase
+wiring section at the top. (One item from this original list
+remains a future hardening step: moving connect-code generation
+fully server-side via a transaction/Cloud Function. The current
+implementation verifies codes against the `connectCodes`
+collection before using one, which is sufficient at family
+scale.)
 
 ## Next steps — iOS on Akansha's Mac (free personal signing)
 

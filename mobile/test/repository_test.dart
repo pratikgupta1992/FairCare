@@ -32,13 +32,13 @@ void main() {
           isTrue);
     });
 
-    test('baby can be found by its connect code, case-insensitively',
+    test('baby can be joined by its connect code, case-insensitively',
         () async {
       final baby = await repo.createBaby('Nyra');
       final code = repo.connectCodeFor(baby.id)!;
-      expect(repo.babyForCode(code)?.id, baby.id);
-      expect(repo.babyForCode(code.toLowerCase())?.id, baby.id);
-      expect(repo.babyForCode('ZZZZZZ'), isNull);
+      expect((await repo.joinWithCode(code))?.id, baby.id);
+      expect((await repo.joinWithCode(code.toLowerCase()))?.id, baby.id);
+      expect(await repo.joinWithCode('ZZZZZZ'), isNull);
     });
 
     test('regenerating a code invalidates the old one', () async {
@@ -46,8 +46,8 @@ void main() {
       final old = repo.connectCodeFor(baby.id)!;
       final fresh = await repo.regenerateConnectCode(baby.id);
       expect(fresh, isNot(old));
-      expect(repo.babyForCode(old), isNull);
-      expect(repo.babyForCode(fresh)?.id, baby.id);
+      expect(await repo.joinWithCode(old), isNull);
+      expect((await repo.joinWithCode(fresh))?.id, baby.id);
     });
 
     test('connect codes are unique across babies', () async {

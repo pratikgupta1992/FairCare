@@ -1,0 +1,124 @@
+// FairCare — Firestore security rules.
+//
+// DEPLOY MANUALLY: these rules are NOT auto-deployed. Paste this
+// file into Firebase Console → Firestore Database → Rules (then
+// Publish), or run `firebase deploy --only firestore:rules` with
+// the Firebase CLI from a project whose firebase.json points at
+// this file. Until they are published, the default rules apply —
+// set them BEFORE giving the app to real users.
+//
+// Schema these rules match (written by
+// lib/firebase_repository.dart):
+//   babies/{babyId}                  {id, name, color, connectCode,
+//                                     memberUids: [uid...], createdBy,
+//                                     createdAt, updatedAt}
+//   babies/{babyId}/caregivers/{id} Caregiver fields
+//   babies/{babyId}/tasks/{id}      CareTask fields
+//   babies/{babyId}/entries/{id}    LogEntry fields + timestamps
+//   connectCodes/{CODE}              {babyId, createdAt}
+//
+// Access model:
+//   - Everything requires sign-in.
+//   - A baby (and all its subcollections) is accessible only to
+//     uids listed in its memberUids.
+//   - connectCodes is the single deliberate exception: any
+//     signed-in user may READ a code doc (the code itself is the
+//     secret — knowing it is the credential) and may create/update
+//     one as part of creating a baby, regenerating a code, or
+//     joining. A code doc must point at a real baby (babyId), and
+//     the join write to the baby itself is separately guarded
+//     below (existing members, OR a self-join that only appends
+//     the caller's own uid to memberUids).
+
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isMember(babyId) {
+      return signedIn()
+        && request.auth.uid in
+             get(/databases/$(database)/documents/babies/$(babyId)).data.memberUids;
+    }
+
+    // ---- Connect codes: lookup is the join handshake ----
+    match /connectCodes/{code} {
+      // Readable by any signed-in user (lookup by exact code).
+      allow get: if signedIn();
+      // Not listable: you cannot enumerate codes.
+      allow list: if false;
+      // Create: when a baby is created or its code regenerated.
+      // The doc must reference an existing baby whose memberUids
+      // include the caller.
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['babyId', 'createdAt'])
+        && request.auth.uid in
+             get(/databases/$(database)/documents/babies/$(request.resource.data.babyId)).data.memberUids;
+      // Update: not used by the app (regeneration deletes + creates
+      // a fresh doc); deny.
+      allow update: if false;
+      // Delete: when the baby's code is regenerated or the baby is
+      // deleted — only a member of the baby it points to.
+      allow delete: if signedIn()
+        && request.auth.uid in
+             get(/databases/$(database)/documents/babies/$(resource.data.babyId)).data.memberUids;
+    }
+
+    // ---- Babies ----
+    match /babies/{babyId} {
+      // Read: members only. (The app queries with
+      // where('memberUids', arrayContains: uid), which this rule
+      // shape permits.)
+      allow get, list: if signedIn()
+        && request.auth.uid in resource.data.memberUids;
+
+      // Create: the creator must make themselves a member and be
+      // recorded as createdBy.
+      allow create: if signedIn()
+        && request.auth.uid in request.resource.data.memberUids
+        && request.resource.data.createdBy == request.auth.uid;
+
+      // Update: existing members — OR the join path: a non-member
+      // whose ONLY change is appending their own uid to memberUids
+      // (the join write issued by FirestoreFairCareRepository
+      // .joinWithCode after a connectCodes lookup).
+      allow update: if signedIn() && (
+        request.auth.uid in resource.data.memberUids
+        || (
+          // self-join: memberUids grows by exactly the caller
+          request.resource.data.memberUids.size()
+              == resource.data.memberUids.size() + 1
+          && request.auth.uid in request.resource.data.memberUids
+          && !(request.auth.uid in resource.data.memberUids)
+          // ...and nothing else about the baby changes
+          && request.resource.data.diff(resource.data)
+               .affectedKeys().hasOnly(['memberUids', 'updatedAt'])
+        )
+      );
+
+      // Delete: members only (the creator in practice).
+      allow delete: if signedIn()
+        && request.auth.uid in resource.data.memberUids;
+
+      // ---- Subcollections: members only, all operations ----
+      match /caregivers/{docId} {
+        allow read, write: if isMember(babyId);
+      }
+      match /tasks/{docId} {
+        allow read, write: if isMember(babyId);
+      }
+      match /entries/{docId} {
+        allow read, write: if isMember(babyId);
+      }
+    }
+
+    // ---- Everything else: deny ----
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
