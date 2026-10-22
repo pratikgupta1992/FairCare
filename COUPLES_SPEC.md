@@ -38,11 +38,22 @@ Developer fee for now.
 - The caregiver can still be changed on any individual entry
   (logging on someone else's behalf stays possible).
 
-## Sync
-- Shared backend (Firebase free tier proposed) — both phones read/write
-  the same log entries, caregivers, and tasks for a joined baby.
+## Sync — Firebase (decided 2026-10-21)
+- Backend is Firebase (Auth + Firestore, free Spark tier), NOT
+  Cloudflare. Rationale: Firestore gives realtime sync and offline
+  persistence out of the box in the Flutter SDK, and Firebase Auth
+  covers sign-in — a Cloudflare Workers/D1 backend would mean
+  hand-rolling sync, offline queuing, conflict handling, and auth
+  for a two-user app. Cloudflare stays an option for static hosting
+  (landing/privacy page) later.
+- Both phones read/write the same log entries, caregivers, and tasks
+  for a joined baby.
 - Entries carry created-by user, timestamps; edits and deletes
   propagate to both phones.
+- Setup still needed: a Firebase project under Pratik's Google
+  account (he creates it / signs in; config files then land in the
+  repo). Until then the app runs against a local mock backend behind
+  the same repository interface.
 
 ## Data model carried over from the Android app
 Baby, Caregiver (type: Mom/Dad/Parent/Nanny/Daycare/Family),

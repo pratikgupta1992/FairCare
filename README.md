@@ -15,6 +15,11 @@ hour, and see at a glance how fairly the work is being shared.
   backend, a per-baby connect code to join a baby's log, and a
   per-user default role so logging pre-selects your caregiver
   (changeable on any entry).
+- `mobile/` — the couples version in progress: one Flutter codebase
+  for Android + iOS with the data model and fairness rules ported
+  from the Android app, per-baby connect codes, and per-user default
+  roles. Currently runs on a local mock backend; Firebase sync is
+  next (see `mobile/BUILD_NOTES.md`).
 
 ## Building the Android app
 
