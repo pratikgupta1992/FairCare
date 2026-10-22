@@ -296,3 +296,44 @@ scale.)
    heap in `mobile/android/gradle.properties`
    (`org.gradle.jvmargs=-Xmx384m`), the same trick the manual
    Kotlin build in `../tools/build_apk.sh` uses on this VM.
+
+## 2026-10-21 (evening) — Real Firebase config wired
+
+- The Firebase project now EXISTS — created by the project owner
+  in his own browser (Muse's browser sign-ins were hard-blocked
+  by Google twice). Project: **faircare-9c88f**, project number
+  **414814305942**, storage bucket
+  `faircare-9c88f.firebasestorage.app`, free Spark plan.
+- All values were sourced from the owner's own uploaded config
+  files (`google-services.json` and `GoogleService-Info.plist`,
+  downloaded by him from the Firebase Console) — not from chat
+  transcription.
+- `lib/firebase_options.dart`: Android and iOS `FirebaseOptions`
+  now hold the real values (Android appId
+  `1:414814305942:android:258d045731c5ca46530cb7`, iOS appId
+  `1:414814305942:ios:d8e56fbbd52d6017530cb7`, both package/bundle
+  `com.faircare.faircare`). No more REPLACE_ME placeholders on
+  Android/iOS. Web options remain placeholders — web is not a
+  registered platform; do not invent values for it.
+- Platform files placed as exact byte copies (md5-verified
+  against the uploads):
+  `android/app/google-services.json` and
+  `ios/Runner/GoogleService-Info.plist`.
+- Android Gradle wiring confirmed (Kotlin DSL): settings declares
+  `com.google.gms.google-services` 4.4.3, `android/app` applies
+  it, `applicationId = "com.faircare.faircare"`.
+- ⚠️ iOS follow-up: `ios/Runner.xcodeproj/project.pbxproj` does
+  NOT reference `GoogleService-Info.plist` — the file is on disk
+  but Xcode won't bundle it until it's added to the Runner target.
+  Fix on Akansha's Mac: open the workspace in Xcode, drag
+  `GoogleService-Info.plist` into the Runner group, ensure the
+  Runner target is checked (or run `flutterfire configure` there).
+  Until then, Firebase init on a real iOS device will fail even
+  though analyze/tests pass.
+- Verification after wiring: `flutter analyze` — no issues.
+  `flutter test` — **34/34 passed**.
+- Still owner-side in the Console (per the Gemini setup sheet):
+  Firestore created in production mode (US), `firestore.rules`
+  published, Email/Password provider enabled. Config drop-in is
+  done regardless; the app falls back to the local backend if
+  Firebase init fails.

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "414814305942",
+    "project_id": "faircare-9c88f",
+    "storage_bucket": "faircare-9c88f.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:414814305942:android:258d045731c5ca46530cb7",
+        "android_client_info": {
+          "package_name": "com.faircare.faircare"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA6vlvNhStFvZyQCo5YpFsP-Vha-14AA7Q"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
