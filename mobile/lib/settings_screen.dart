@@ -48,6 +48,38 @@ class _SettingsScreenState extends State<SettingsScreen> {
           onChanged: controller.setUserName,
         ),
         const SizedBox(height: 32),
+        Text('Appearance', style: Theme.of(context).textTheme.titleLarge),
+        const SizedBox(height: 4),
+        Text(
+          'System follows your device\u2019s dark-mode setting.',
+          style: TextStyle(
+              fontSize: 13,
+              color: Theme.of(context).colorScheme.onSurfaceVariant),
+        ),
+        const SizedBox(height: 12),
+        SegmentedButton<ThemeMode>(
+          segments: const [
+            ButtonSegment(
+              value: ThemeMode.system,
+              icon: Icon(Icons.brightness_auto),
+              label: Text('System'),
+            ),
+            ButtonSegment(
+              value: ThemeMode.light,
+              icon: Icon(Icons.light_mode),
+              label: Text('Light'),
+            ),
+            ButtonSegment(
+              value: ThemeMode.dark,
+              icon: Icon(Icons.dark_mode),
+              label: Text('Dark'),
+            ),
+          ],
+          selected: {controller.themeMode},
+          onSelectionChanged: (selection) =>
+              controller.setThemeMode(selection.first),
+        ),
+        const SizedBox(height: 32),
         Text('Default role',
             style: Theme.of(context).textTheme.titleLarge),
         const SizedBox(height: 4),

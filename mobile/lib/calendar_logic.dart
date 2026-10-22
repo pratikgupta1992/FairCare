@@ -80,6 +80,27 @@ int scoreTint(double score) {
   return 0xFFFFCDD2;
 }
 
+/// Brightness-aware variant of [scoreTint]: the pastels above
+/// are light-mode colors — in dark mode the (near-white) day
+/// numbers would sit unreadably on them. So for dark mode the
+/// pastel is alpha-blended over the theme's surface color,
+/// keeping the hue (green/yellow/orange/red by band) while
+/// landing at a dark-mode luminance the surface's text colors
+/// stay readable on. Light mode returns the pastel unchanged.
+int scoreTintArgb(double score,
+    {required int surfaceArgb, required bool dark}) {
+  final tint = scoreTint(score);
+  if (!dark) return tint;
+  const blend = 0.30; // pastel share; the rest is the surface
+  int channel(int shift) {
+    final t = (tint >> shift) & 0xFF;
+    final s = (surfaceArgb >> shift) & 0xFF;
+    return (t * blend + s * (1 - blend)).round();
+  }
+
+  return 0xFF000000 | (channel(16) << 16) | (channel(8) << 8) | channel(0);
+}
+
 /// "Wednesday, Oct 21" style label for the selected-day card
 /// (Kotlin `SimpleDateFormat("EEEE, MMM d")`).
 String fullDayLabel(int dayStartMillis) {

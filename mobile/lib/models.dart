@@ -236,6 +236,55 @@ class LogEntry {
       );
 }
 
+/// The quick-log task Pratik asked for (2026-10-22): a general
+/// bucket so a parent can log time under their own name in one
+/// tap. The original app never seeded it — it only appears in a
+/// TodayScreen.kt example line ("Dad • ⭐ General Care •
+/// 7:00–7:15 PM"), which is where the ⭐ comes from; weight 1.0,
+/// anyone, counts toward the balance.
+const String kGeneralCareTaskName = 'General Care';
+
+/// Reserved id for the seeded [generalCareTask]. The per-baby
+/// default tasks use ids 1–12 and custom tasks get epoch-millis
+/// ids, so 0 is always free — and because it is FIXED, both
+/// parents' phones write the same Firestore document for it,
+/// which is what makes the repositories' "ensure" step
+/// duplicate-proof across devices.
+const int kGeneralCareTaskId = 0;
+
+/// The canonical "General Care" task: sorts before everything
+/// (sort −1) and is the log form's default selection.
+CareTask generalCareTask() => const CareTask(
+      id: kGeneralCareTaskId,
+      name: kGeneralCareTaskName,
+      emoji: '⭐',
+      weight: 1.0,
+      eligibility: Eligibility.anyone,
+      countsTowardBalance: true,
+      isCustom: false,
+      sort: -1,
+    );
+
+/// True when [task] is a "General Care" task (name match,
+/// case-insensitive — a user-renamed or hand-created one counts).
+bool isGeneralCareTask(CareTask task) =>
+    task.name.trim().toLowerCase() == kGeneralCareTaskName.toLowerCase();
+
+/// True when [tasks] has no General Care task and one should be
+/// ensured into existence.
+bool needsGeneralCare(List<CareTask> tasks) =>
+    !tasks.any(isGeneralCareTask);
+
+/// Order for the log form's task dropdown: General Care first
+/// (one-tap quick log), then the rest in their incoming order
+/// (the repositories already sort by `sort`). Deliberately NOT
+/// just "sort by stored sort": an existing baby's General Care
+/// may carry any stored sort value, and it must still pin first.
+List<CareTask> orderTasksForDropdown(List<CareTask> tasks) => [
+      ...tasks.where(isGeneralCareTask),
+      ...tasks.where((t) => !isGeneralCareTask(t)),
+    ];
+
 /// Default tasks with the fairness rules baked in — ported verbatim
 /// from `defaultTasks()` in the Android app's `Db.kt`.
 /// Weight = effort multiplier.

@@ -60,7 +60,9 @@ class _LogEntryFormState extends State<LogEntryForm> {
       _end = existing.end;
       _noteController.text = existing.note;
     } else {
-      _task = repo.tasks.firstOrNull;
+      // Default to the first dropdown entry — General Care, per
+      // the pinned ordering — so a quick log is zero extra taps.
+      _task = orderTasksForDropdown(repo.tasks).firstOrNull;
       // Pre-select the user's default role for this baby.
       _caregiver = controller.defaultCaregiverFor(widget.baby.id) ??
           repo.caregivers.firstOrNull;
@@ -192,7 +194,7 @@ class _LogEntryFormState extends State<LogEntryForm> {
             initialValue: _task,
             decoration: const InputDecoration(
                 labelText: 'Task', border: OutlineInputBorder()),
-            items: repo.tasks
+            items: orderTasksForDropdown(repo.tasks)
                 .map((t) => DropdownMenuItem(
                       value: t,
                       child: Text(

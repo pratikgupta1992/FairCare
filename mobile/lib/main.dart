@@ -30,6 +30,7 @@ import 'prefs_store.dart';
 import 'reminder_service.dart';
 import 'repository.dart';
 import 'settings_screen.dart';
+import 'theme.dart';
 import 'today_screen.dart';
 
 /// Compile-time backend switch: pass
@@ -108,10 +109,12 @@ class _FirebaseFairCareRootState extends State<FirebaseFairCareRoot> {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'FairCare',
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),
-        useMaterial3: true,
-      ),
+      theme: fairCareLightTheme(),
+      darkTheme: fairCareDarkTheme(),
+      // No controller exists yet at the gate (sign-in / splash),
+      // so it follows the device; the app proper applies the
+      // user's stored Appearance choice once signed in.
+      themeMode: ThemeMode.system,
       home: StreamBuilder<AuthUser?>(
         stream: widget.auth.userChanges,
         builder: (context, snap) {
@@ -179,6 +182,43 @@ class FairCareApp extends StatefulWidget {
 
 class _FairCareAppState extends State<FairCareApp> {
   bool? _onboardingDone;
+  late ThemeMode _themeMode = widget.controller.themeMode;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.controller.addListener(_syncThemeMode);
+  }
+
+  @override
+  void didUpdateWidget(covariant FairCareApp oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      oldWidget.controller.removeListener(_syncThemeMode);
+      widget.controller.addListener(_syncThemeMode);
+      _themeMode = widget.controller.themeMode;
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_syncThemeMode);
+    super.dispose();
+  }
+
+  /// Rebuilds ONLY when the appearance choice actually changed.
+  /// The controller notifies for many other reasons (a baby
+  /// created mid-onboarding, new entries) and reacting to those
+  /// here would re-run the onboarding gate in [build] and yank
+  /// the flow — exactly what the gate comment below warns about.
+  /// The theme mode can only change from Settings, which is
+  /// unreachable until onboarding is done, so this is safe.
+  void _syncThemeMode() {
+    final mode = widget.controller.themeMode;
+    if (mode != _themeMode && mounted) {
+      setState(() => _themeMode = mode);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -193,10 +233,9 @@ class _FairCareAppState extends State<FairCareApp> {
       controller: widget.controller,
       child: MaterialApp(
         title: 'FairCare',
-        theme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),
-          useMaterial3: true,
-        ),
+        theme: fairCareLightTheme(),
+        darkTheme: fairCareDarkTheme(),
+        themeMode: _themeMode,
         home: needsOnboarding
             ? _OnboardingGate(
                 onFinished: () => setState(() => _onboardingDone = true))

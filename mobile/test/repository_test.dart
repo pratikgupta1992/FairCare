@@ -15,8 +15,11 @@ void main() {
     test('seeds Mom/Dad, default tasks, and one baby (like the Android app)',
         () {
       expect(repo.caregivers.map((c) => c.name), containsAll(['Mom', 'Dad']));
-      expect(repo.tasks.length, 12);
-      expect(repo.tasks.first.name, 'Breastfeeding');
+      // The 12 Android defaults PLUS the ensured General Care
+      // task (added 2026-10-22), which sorts first.
+      expect(repo.tasks.length, 13);
+      expect(repo.tasks.first.name, 'General Care');
+      expect(repo.tasks.map((t) => t.name), contains('Breastfeeding'));
       expect(repo.babies.length, 1);
     });
 

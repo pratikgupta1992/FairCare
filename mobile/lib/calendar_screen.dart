@@ -220,7 +220,11 @@ class _CalendarScreenState extends State<CalendarScreen> {
     final bg = selected
         ? scheme.primary.withValues(alpha: 0.25)
         : score != null
-            ? Color(cal.scoreTint(score))
+            ? Color(cal.scoreTintArgb(
+                score,
+                surfaceArgb: scheme.surface.toARGB32(),
+                dark: Theme.of(context).brightness == Brightness.dark,
+              ))
             : scheme.surfaceContainerHighest.withValues(alpha: 0.35);
     final dayNum = DateTime.fromMillisecondsSinceEpoch(dayStart).day;
     return Padding(
@@ -416,8 +420,12 @@ class _CalendarScreenState extends State<CalendarScreen> {
                       color: months[r + c].entries.isEmpty
                           ? scheme.surfaceContainerHighest
                               .withValues(alpha: 0.35)
-                          : Color(cal.scoreTint(
-                              months[r + c].report.score ?? 0)),
+                          : Color(cal.scoreTintArgb(
+                              months[r + c].report.score ?? 0,
+                              surfaceArgb: scheme.surface.toARGB32(),
+                              dark: Theme.of(context).brightness ==
+                                  Brightness.dark,
+                            )),
                       borderRadius: BorderRadius.circular(12),
                       child: InkWell(
                         borderRadius: BorderRadius.circular(12),

@@ -12,11 +12,13 @@ library;
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/material.dart' show ThemeMode;
 import 'package:flutter/widgets.dart';
 
 import 'models.dart';
 import 'reminders.dart';
 import 'repository.dart';
+import 'theme.dart';
 
 class AppController extends ChangeNotifier {
   AppController(
@@ -60,7 +62,15 @@ class AppController extends ChangeNotifier {
 
   ReminderSettings _reminderSettings = const ReminderSettings();
 
+  ThemeMode _themeMode = ThemeMode.system;
+
   String get userName => _userName;
+
+  /// Appearance choice (Settings → Appearance). Defaults to
+  /// [ThemeMode.system] — existing installs have no stored value
+  /// and follow the device, which is the behavior Pratik asked
+  /// for as the default.
+  ThemeMode get themeMode => _themeMode;
 
   /// Hourly logging-reminder settings (original app's
   /// ReminderPrefs, kept per user/device like the default role).
@@ -118,6 +128,7 @@ class AppController extends ChangeNotifier {
         quietEndMin:
             (j['quietEndMin'] as int?) ?? const ReminderSettings().quietEndMin,
       );
+      _themeMode = themeModeFromName(j['themeMode'] as String?);
     }
     // First run on this device: every baby the backend already
     // shows this user counts as joined — locally that's the seeded
@@ -160,6 +171,7 @@ class AppController extends ChangeNotifier {
         'remindersEnabled': _reminderSettings.enabled,
         'quietStartMin': _reminderSettings.quietStartMin,
         'quietEndMin': _reminderSettings.quietEndMin,
+        'themeMode': themeModeName(_themeMode),
       }),
     );
   }
@@ -178,6 +190,13 @@ class AppController extends ChangeNotifier {
     await _savePrefs();
     notifyListeners();
     onRemindersChanged?.call();
+  }
+
+  Future<void> setThemeMode(ThemeMode mode) async {
+    if (mode == _themeMode) return;
+    _themeMode = mode;
+    await _savePrefs();
+    notifyListeners();
   }
 
   Future<void> setUserName(String name) async {

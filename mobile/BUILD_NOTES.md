@@ -649,3 +649,106 @@ Diffed the original app feature by feature and closed the gaps:
   dependency is in the pub cache.
 - Not committed/pushed (parent agent handles pushes, per
   instructions).
+
+## 2026-10-22 — Dark mode (follows system by default) + "General Care" quick-log task
+
+Two features Pratik requested on 2026-10-22.
+
+### Dark mode + system preference
+
+- New `lib/theme.dart`: `fairCareLightTheme()` / `fairCareDarkTheme()`,
+  both `ColorScheme.fromSeed(seedColor: Colors.teal)` (the app's
+  existing brand seed), dark with `Brightness.dark` — teal-tinted
+  dark surfaces, not a generic grey. Also `themeModeName` /
+  `themeModeFromName` (unknown/null → system).
+- `AppController` persists the choice in the SAME prefs JSON
+  (`faircare_user_v1`, key `themeMode`, beside the reminder
+  settings). Default when the key is absent — i.e. every existing
+  install — is `ThemeMode.system` (follow the device).
+- `FairCareApp`'s MaterialApp now takes theme + darkTheme +
+  themeMode, the mode synced from the controller via a listener
+  that setStates ONLY when the mode value actually changed (the
+  controller notifies for many reasons; rebuilding on all of them
+  would re-run the onboarding gate — see the comment in
+  `main.dart`). The Firebase auth-gate MaterialApp also got
+  darkTheme (themeMode system; no controller exists there yet).
+- Settings → new "Appearance" section right under Your profile:
+  SegmentedButton System / Light / Dark (System preselected).
+- Hardcoded-color audit: the screens were already almost fully
+  on `colorScheme` (ScoreRing/SplitBar/Heatmap tracks use neutral
+  grey alphas that read fine on both; timeline block text is
+  white-on-caregiver-color and the now-line stays red, as in the
+  original). The one real casualty was the calendar score tint:
+  `scoreTint`'s pastels are light-only, and day/month text is
+  `onSurface` (near-white in dark). New pure helper
+  `scoreTintArgb(score, surfaceArgb:, dark:)` in
+  `calendar_logic.dart` — light mode returns the pastel verbatim;
+  dark mode alpha-blends the pastel 30% over the surface color,
+  keeping the band hue at a dark luminance. Used by both the
+  month day cells and the year tiles.
+
+### "General Care" first in the task dropdown
+
+- Canonical task in `models.dart`: `generalCareTask()` — name
+  "General Care", emoji ⭐ (the original app never seeded it; ⭐
+  is from its TodayScreen.kt example line "Dad • ⭐ General
+  Care • 7:00–7:15 PM"), weight 1.0, anyone, counts toward
+  balance, sort −1, and a RESERVED fixed id
+  (`kGeneralCareTaskId = 0`; per-baby defaults own ids 1–12,
+  custom tasks get epoch-millis ids). Pure helpers alongside:
+  `isGeneralCareTask` (case-insensitive name match),
+  `needsGeneralCare`, `orderTasksForDropdown`.
+- Log form: dropdown items come from `orderTasksForDropdown`
+  (General Care pinned first regardless of its stored sort,
+  rest keep repo order) and a NEW entry's default task is that
+  first item — so a quick log under your own name is: open form
+  (caregiver already defaults to your role), set times, save.
+- Existing babies (Nyra!): changing the seed alone wouldn't
+  reach already-seeded task lists, so both repositories run an
+  idempotent ensure when tasks load:
+  - Local: `init()` → `_ensureGeneralCare()` (tasks are global
+    locally; one ensure covers all babies).
+  - Firestore: per baby at `init()` and in `joinWithCode()`,
+    coalesced per baby via an in-flight map (same spirit as the
+    createBaby fix), and skipped once verified. Cross-device
+    race safety comes from the fixed id: the ensure `set()`s
+    document `tasks/0` with canonical content, so two phones
+    ensuring simultaneously write the SAME document — no
+    duplicate can exist. `createBaby` also seeds it directly in
+    the creation batch (+ cache mirror). If the server write
+    fails (offline), the task is mirrored locally for the
+    session and re-ensured next launch.
+- Firestore note: Nyra gains `tasks/0` the first time either
+  parent opens this build — no manual data step needed.
+
+### Verification
+
+- `flutter analyze` — clean.
+- `flutter test` — **100/100** (80 baseline + 20 new):
+  theme_mode_test (name mapping; controller default = System;
+  pre-setting prefs default to System; setThemeMode persistence
+  round-trip across controller instances; dark tint blend keeps
+  band hue and stays dark; themes share the seed),
+  general_care_test (canonical values; matching; dropdown
+  pinning incl. a sort=99 and a lowercase hand-made General
+  Care; local ensure: added once/sorted first, second launch
+  creates nothing, concurrent inits still one, delete →
+  re-ensured next launch), +1 widget test (Appearance section,
+  System default on the MaterialApp, tapping Dark/Light
+  actually flips the app brightness).
+- One pre-existing assertion updated: repository_test's seed
+  test now expects 13 tasks with General Care first (it encoded
+  the pre-feature seed; the 12 defaults are still all present).
+- APK: release build (minify/shrink OFF, persistent signing
+  key), content-checked as usual — see the verification footer
+  appended after the build.
+- **APK verification footer (this entry's build):**
+  `build-manual/FairCare-couples.apk`, 65,599,461 bytes.
+  **Signer:** SHA-256
+  `7944243d1e75c5ba5b37e0e8189e844798bb80fb21966332c33d1345564c3b0b`
+  — the persistent key; updates over the current install.
+  **Label:** `FairCare` (aapt2), package `com.faircare.faircare`.
+  **Content proof:** packaged `libapp.so` string-checked —
+  contains `General Care` and `Appearance` (this build was made
+  after a `flutter clean`, so no stale-packaging risk).
+  Not committed/pushed (parent agent handles pushes).

@@ -106,6 +106,7 @@ class FirestoreFairCareRepository implements FairCareRepository {
     _applyBabies(snap.docs);
     for (final b in _babies) {
       await _loadSubcollectionsOnce(b.id);
+      await _ensureGeneralCare(b.id);
     }
     _babiesSub = query.snapshots().listen((s) {
       _applyBabies(s.docs);
@@ -363,6 +364,11 @@ class FirestoreFairCareRepository implements FairCareRepository {
       batch.set(
           ref.collection('tasks').doc('${seeded.id}'), seeded.toJson());
     }
+    // Plus the General Care quick-log task, under its reserved
+    // fixed id (see models.dart) — the same document the ensure
+    // step writes for babies created before it existed.
+    final gc = generalCareTask();
+    batch.set(ref.collection('tasks').doc('${gc.id}'), gc.toJson());
     await batch.commit();
 
     // Mirror into the caches so getters are correct immediately.
@@ -377,6 +383,7 @@ class FirestoreFairCareRepository implements FairCareRepository {
     _tasksByBaby[id] = {
       for (var i = 0; i < defaultTasks().length; i++)
         i + 1: defaultTasks()[i].copyWith(id: i + 1),
+      gc.id: gc,
     };
     _entriesByBaby[id] = {};
     _subscribeSubcollections(id);
@@ -457,9 +464,74 @@ class FirestoreFairCareRepository implements FairCareRepository {
     final c = d['connectCode'] as String?;
     if (c != null) _codes[baby.id] = c;
     await _loadSubcollectionsOnce(baby.id);
+    await _ensureGeneralCare(baby.id);
     _subscribeSubcollections(baby.id);
     _emit();
     return baby;
+  }
+
+  // ------------------------------------------------------------------
+  // General Care "ensure"
+  // ------------------------------------------------------------------
+
+  /// Babies whose General Care task has been verified/created by
+  /// this session, and the in-flight ensure per baby — concurrent
+  /// calls for the same baby coalesce into one, in the same
+  /// spirit as AppController.createBaby's coalescing.
+  final Set<int> _generalCareEnsured = {};
+  final Map<int, Future<void>> _generalCareInFlight = {};
+
+  /// Idempotent "ensure": babies created before the General Care
+  /// task existed (e.g. Nyra, seeded 2026-10-21) gain it when
+  /// their tasks are loaded; babies that already have it are
+  /// untouched, so this never duplicates.
+  ///
+  /// Race safety across devices comes from the task's FIXED id:
+  /// the write is a `set()` of document `tasks/0` with canonical
+  /// content, so if both parents' phones ensure at the same
+  /// moment they write the same document with the same values —
+  /// there is no second document to duplicate into. The tasks
+  /// snapshot listener then echoes the same task back.
+  Future<void> _ensureGeneralCare(int babyId) {
+    if (_generalCareEnsured.contains(babyId)) return Future.value();
+    final inFlight = _generalCareInFlight[babyId];
+    if (inFlight != null) return inFlight;
+    final future = _ensureGeneralCareInner(babyId).whenComplete(() {
+      _generalCareInFlight.remove(babyId);
+    });
+    _generalCareInFlight[babyId] = future;
+    return future;
+  }
+
+  Future<void> _ensureGeneralCareInner(int babyId) async {
+    final per = _tasksByBaby[babyId];
+    if (per == null) return;
+    if (!needsGeneralCare(per.values.toList())) {
+      _generalCareEnsured.add(babyId);
+      return;
+    }
+    var gc = generalCareTask();
+    final occupant = per[gc.id];
+    if (occupant != null && !isGeneralCareTask(occupant)) {
+      // Id 0 is reserved for General Care and nothing in the app
+      // assigns it otherwise; if it ever were taken, fall back to
+      // a fresh id rather than clobbering that task.
+      gc = gc.copyWith(id: _newId(per.keys.toSet()));
+    }
+    try {
+      await _sub(babyId, 'tasks').doc('${gc.id}').set(gc.toJson());
+    } catch (_) {
+      // Offline / transient failure: mirror locally anyway so the
+      // form can offer the task now; the next launch re-ensures
+      // against the server (this baby is only marked ensured
+      // after a successful write).
+      per[gc.id] = gc;
+      _emit();
+      return;
+    }
+    per[gc.id] = gc;
+    _generalCareEnsured.add(babyId);
+    _emit();
   }
 
   // ------------------------------------------------------------------

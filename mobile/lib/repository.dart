@@ -151,6 +151,26 @@ class LocalFairCareRepository implements FairCareRepository {
       _seed();
       await _save();
     }
+    await _ensureGeneralCare();
+  }
+
+  /// Idempotent "ensure" for the General Care quick-log task:
+  /// state persisted before the task existed (or a state where
+  /// it was deleted) gains it on load; when it is already there
+  /// this is a no-op, so re-running init over the same store
+  /// never duplicates it. (Tasks are global in the local model,
+  /// so one ensure covers every baby.)
+  Future<void> _ensureGeneralCare() async {
+    if (!needsGeneralCare(_tasks)) return;
+    var gc = generalCareTask();
+    if (_tasks.any((t) => t.id == gc.id)) {
+      // Id 0 is reserved for General Care; if something else
+      // ever took it, fall back to a fresh id instead of
+      // clobbering that task.
+      gc = gc.copyWith(id: _nextTaskId++);
+    }
+    _tasks.add(gc);
+    await _save();
   }
 
   void _seed() {
