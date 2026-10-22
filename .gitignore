@@ -1,0 +1,9 @@
+# Build outputs and local machine state — never committed
+build-manual/
+deps/
+icon-work/
+local.properties
+*.apk
+*.idsig
+.gradle/
+build/
